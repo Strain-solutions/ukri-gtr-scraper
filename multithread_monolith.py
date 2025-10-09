@@ -300,8 +300,8 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
 
 if __name__ == "__main__":
 
-    search_term = ' "older adults" physical activity '
-    start_date = '2022-01-01'
+    search_term = '"essential tremor"'
+    start_date = '2016-01-01'
     end_date = '2025-10-01'
     max_rows = 20
 
