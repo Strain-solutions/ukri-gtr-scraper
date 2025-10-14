@@ -657,7 +657,7 @@ def run_search_to_excel(search_term: str, start_date: str, end_date: str, max_ro
 # ----------------------------
 if __name__ == "__main__":
     # Adjust these as needed, or wire up CLI args later
-    search_term = 'Physical activity AND older adults'
+    search_term = 'problem gambling'
     start_date  = '2019-01-01'
     end_date    = '2025-10-01'
     max_rows    = 20

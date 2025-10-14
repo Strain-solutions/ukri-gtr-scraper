@@ -5,7 +5,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 from bs4 import BeautifulSoup
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from selenium import webdriver
@@ -45,7 +45,7 @@ def build_gtr_project_url(ref: str) -> str:
     encoded = quote(ref, safe="")
     return f"https://gtr.ukri.org/projects?ref={encoded}"
 
-def fetch_all_hits_gtr(query, max_records=500):
+def fetch_all_hits_gtr(query, max_records=500, title_only = True):
     """
     Fetches records from the GTR API using a keyword search query.
     Corrected version: uses `project.query` param, proper pagination, and version headers.
@@ -55,13 +55,23 @@ def fetch_all_hits_gtr(query, max_records=500):
     records = []
     page = 1
     fetch_size = 100
+    fields = 'project.title' if title_only else 'project.title,project.abs'
+    # Build and log the full request URL for transparency
+
+    print(f"🔍 Querying GTR for '{query}' (fields={fields}) …")
 
     while len(records) < max_records:
         params = {
             "project.query": query,   # Correct param name
             "page": page,             # Page number
-            "pageSize": fetch_size    # Number of results per page
+            "pageSize": fetch_size,    # Number of results per page
+            "fields":fields,
         }
+        # Build and log the full request URL for transparency
+        full_url = f"{base_url}?{urlencode(params)}"
+        print(f"🌐 Requesting: {full_url}")
+
+
         resp = requests.get(base_url, params=params, headers=headers, timeout=30)
         if resp.status_code == 400:
             raise ValueError(f"GTR API rejected the query '{query}' – check parameter format.")
@@ -446,10 +456,50 @@ def run_gtr_search_to_excel(search_term, max_records=200, threads=4):
     print(f"✅ Done. Wrote {len(df_all)} projects to Excel → {outfile}")
 
 
+#  --------- Test Scraper only
+
+import requests
+from bs4 import BeautifulSoup
+
+def search_gtr_web(term, max_results=50):
+    """Use the website search endpoint (not the API) for more accurate keyword matching."""
+    base_url = "https://gtr.ukri.org/search/project"
+    params = {
+        "term": term,
+        "fetchSize": max_results,
+        "type": "project"
+    }
+    resp = requests.get(base_url, params=params, timeout=20)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    results = []
+    for card in soup.select(".search-result"):
+        title_tag = card.select_one("a.search-title")
+        if not title_tag:
+            continue
+        url = "https://gtr.ukri.org" + title_tag["href"]
+        title = title_tag.get_text(strip=True)
+        abs_tag = card.select_one(".search-snippet")
+        snippet = abs_tag.get_text(strip=True) if abs_tag else ""
+        results.append({"Title": title, "URL": url, "Snippet": snippet})
+
+    print(f"✅ Found {len(results)} results from web search.")
+    return results
+
+
 # ---------- Example Usage ----------
+
+
+
+
+
 """
-Gtr does not recognise AND OR bools but does recognise phrases in double quotes
+# Gtr does not recognise AND OR bools but does recognise phrases in double quotes
 so for example ' "micro plastics" microplastics '
 """
+
+# TODO check search filters like title - results are limited relevance sometimes
 if __name__ == "__main__":
-    run_gtr_search_to_excel('"tremor" diagnosis', max_records=100, threads=4)
+    # run_gtr_search_to_excel('"essential tremor" ', max_records=100, threads=4)
+    search_gtr_web('"health"')
