@@ -205,7 +205,7 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
     print(f"✅ Completed scraping {len(enriched)} records using {n_threads} threads")
 
     # ------------------------------
-    # Excel writing (unchanged)
+    # Excel writing
     # ------------------------------
     with_protocol = [r for r in enriched if r["Protocol Count"] > 0]
 
@@ -271,7 +271,7 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
 
     safe_term = re.sub(r"[^A-Za-z0-9_]+", "_", search_term).strip("_")
     today = datetime.now().strftime("%Y%m%d")
-    outfile = f"nihr_protocol_search_{safe_term}_{today}.xlsx"
+    outfile = f"completed_searches/nihr_protocol_search_{safe_term}_{today}.xlsx"
     classification = load_classification_label()
 
     with pd.ExcelWriter(outfile, engine="xlsxwriter") as writer:
@@ -302,17 +302,17 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
 
 if __name__ == "__main__":
 
-    # search_term = ' "older adults" AND digital '
-    search_term = '"game of stones" '
+    search_term = '" echocardiography"'
+    # search_term = '“menstrual health” OR “reproductive health” OR “premenstrual”'
 
-    start_date = '2016-01-01'
+    start_date = '2010-01-01'
     end_date = '2025-10-01'
-    max_rows = 20
+    max_rows = 40
 
 
     run_search_to_excel(
         search_term=search_term,
         start_date=start_date,
         end_date=end_date,
-        max_rows=20
+        max_rows=max_rows
     )
