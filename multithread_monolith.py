@@ -15,6 +15,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
+from nihr_dialogue import get_scraper_inputs
+
 
 def load_classification_label():
     default = "University of the West of Scotland – INTERNAL"
@@ -65,24 +67,72 @@ def within_range(dt, start_dt, end_dt):
     return dt and start_dt <= dt <= end_dt
 
 
-def fetch_all_hits(query, page_size=100):
+def fetch_all_hits(query, mechanism=None, page_size=100):
+    """
+    :param mechanism: Single string code (e.g. 'i4i' or 'PHR').
+                      If None, searches the whole database.
+    """
     base_url = "https://nihr.opendatasoft.com/api/records/1.0/search/"
     dataset = "infonihr-open-dataset"
-    head = requests.get(base_url, params={"dataset": dataset, "q": query, "rows": 0})
+
+    # Base parameters used for every call
+    base_params = {
+        "dataset": dataset,
+        "q": query
+    }
+
+    # If a mechanism is provided, add the specific API filter
+    if mechanism:
+        base_params["refine.acronym"] = mechanism
+
+    # 1. Get total hits (Head request)
+    # We copy base_params so we don't mess up the loop later
+    head_params = base_params.copy()
+    head_params["rows"] = 0
+
+    head = requests.get(base_url, params=head_params)
     head.raise_for_status()
     total = head.json().get("nhits", 0)
 
+    print(f"Found {total} hits for query '{query}' (Mechanism: {mechanism if mechanism else 'All'})")
+
+    # 2. Fetch pages
     records, start = [], 0
     while start < total:
-        params = {"dataset": dataset, "q": query, "rows": page_size, "start": start}
-        resp = requests.get(base_url, params=params)
+        # Update params for pagination
+        current_params = base_params.copy()
+        current_params["rows"] = page_size
+        current_params["start"] = start
+
+        resp = requests.get(base_url, params=current_params)
         resp.raise_for_status()
+
         chunk = resp.json().get("records", [])
         if not chunk:
             break
+
         records.extend(chunk)
         start += page_size
+
     return records, total
+# def fetch_all_hits(query, page_size=100):
+#     base_url = "https://nihr.opendatasoft.com/api/records/1.0/search/"
+#     dataset = "infonihr-open-dataset"
+#     head = requests.get(base_url, params={"dataset": dataset, "q": query, "rows": 0})
+#     head.raise_for_status()
+#     total = head.json().get("nhits", 0)
+#
+#     records, start = [], 0
+#     while start < total:
+#         params = {"dataset": dataset, "q": query, "rows": page_size, "start": start}
+#         resp = requests.get(base_url, params=params)
+#         resp.raise_for_status()
+#         chunk = resp.json().get("records", [])
+#         if not chunk:
+#             break
+#         records.extend(chunk)
+#         start += page_size
+#     return records, total
 
 
 def scrape_award_page(driver, project_url):
@@ -132,13 +182,13 @@ def scrape_award_page(driver, project_url):
 # ---------------------------------------------------------------------
 # MAIN FUNCTION - only this changes to multithreading
 # ---------------------------------------------------------------------
-def run_search_to_excel(search_term, start_date, end_date, max_rows):
+def run_search_to_excel(search_term,  start_date, end_date, max_rows, mechanism=None,):
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
     print(f"🔍 Query: {search_term}")
     print(f"📅 Date window: {start_date} → {end_date}")
-    all_records, total_hits = fetch_all_hits(search_term)
+    all_records, total_hits = fetch_all_hits(search_term, mechanism=mechanism)
     print(f"   API returned {total_hits} total hits")
 
     candidates = []
@@ -158,6 +208,11 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
             })
     candidates.sort(key=lambda r: r["_sort_date"], reverse=True)
     print(f"   After date filter: {len(candidates)} records")
+
+    #  early exit if empty
+    if not candidates:
+        print("⚠️ No candidates found within date range — skipping scraping.")
+        return pd.DataFrame(), 0  # or whatever makes sense for your workflow
 
     # ------------------------------
     # Multithreaded scraping section
@@ -188,6 +243,7 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
             })
         driver.quit()
         return results
+
     n_threads = min(4, max(1, len(candidates)))
     chunk_size = (len(candidates) + n_threads - 1) // n_threads
     chunks = [candidates[i:i + chunk_size] for i in range(0, len(candidates), chunk_size)]
@@ -271,7 +327,7 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
 
     safe_term = re.sub(r"[^A-Za-z0-9_]+", "_", search_term).strip("_")
     today = datetime.now().strftime("%Y%m%d")
-    outfile = f"nihr_protocol_search_{safe_term}_{today}.xlsx"
+    outfile = f"search-results/nihr_protocol_search_{safe_term}_{today}.xlsx"
     classification = load_classification_label()
 
     with pd.ExcelWriter(outfile, engine="xlsxwriter") as writer:
@@ -302,17 +358,15 @@ def run_search_to_excel(search_term, start_date, end_date, max_rows):
 
 if __name__ == "__main__":
 
-    # search_term = ' "older adults" AND digital '
-    search_term = '"game of stones" '
+    config = get_scraper_inputs()  # returns a NIHRConfig class
+    if config:
+        print(f"--- Configuration Loaded ---")
+        print(f"Mechanism: {config.mechanism if config.mechanism else 'All'}")
 
-    start_date = '2016-01-01'
-    end_date = '2025-10-01'
-    max_rows = 20
-
-
-    run_search_to_excel(
-        search_term=search_term,
-        start_date=start_date,
-        end_date=end_date,
-        max_rows=20
-    )
+        run_search_to_excel(
+            search_term=config.search_terms,
+            start_date=config.start_date,
+            end_date=config.end_date,
+            max_rows=config.max_rows,
+            mechanism=config.mechanism,
+        )

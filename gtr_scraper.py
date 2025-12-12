@@ -72,7 +72,7 @@ def fetch_all_hits_gtr(query, max_records=500, title_only = True):
         print(f"🌐 Requesting: {full_url}")
 
 
-        resp = requests.get(base_url, params=params, headers=headers, timeout=30)
+        resp = requests.get(base_url, params=params, headers=headers, timeout=20)
         if resp.status_code == 400:
             raise ValueError(f"GTR API rejected the query '{query}' – check parameter format.")
         resp.raise_for_status()
